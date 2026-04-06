@@ -1,0 +1,9 @@
+# Exclude local and non-function artifacts from deployment
+.vscode/
+.python_packages/
+*.pptx
+*.zip
+azuredeploy.bicep
+azuredeploy.parameters.json
+Test-*.ps1
+tmp-webconfig-patch.json
