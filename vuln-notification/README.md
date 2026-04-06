@@ -38,7 +38,7 @@ flowchart TD
   B -->|OBO で Graph トークン取得| C[Entra ID\nvuln-notify-api-app]
   B -->|UPN 解決| D[Microsoft Graph /users]
   B -->|チャット作成| E[Microsoft Graph /chats]
-  B -->|Adaptive Card 投稿| F[Microsoft Graph /chats/{id}/messages]
+  B -->|Adaptive Card 投稿| F[Microsoft Graph /chats/:chatId/messages]
   B -->|Planner タスク作成| G[Microsoft Graph /planner/tasks]
 
   H[Azure Key Vault\nkv-vuln-notify-prod] -->|TENANT-ID / CLIENT-ID / CLIENT-SECRET / API-KEY| B
