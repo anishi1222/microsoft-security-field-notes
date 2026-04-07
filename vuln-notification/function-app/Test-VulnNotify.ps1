@@ -2,8 +2,8 @@
 # 脆弱性通知システム - 動作確認用 PowerShell スクリプト
 # 使用方法:
 #   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UserAccessToken "<Entra user token>" -Upns "analyst01@contoso.com","owner01@contoso.com"
-#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UseAzGraphToken -Upns "analyst01@contoso.com","owner01@contoso.com"
-#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UseAzGraphToken -Upns "analyst01@contoso.com","owner01@contoso.com" -CreatePlannerTask -PlannerPlanId "<PLANNER_PLAN_ID>" -PlannerBucketId "<PLANNER_BUCKET_ID>"
+#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UseAzApiToken -ApiAppId "<API_APP_ID>" -Upns "analyst01@contoso.com","owner01@contoso.com"
+#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UseAzApiToken -ApiAppId "<API_APP_ID>" -Upns "analyst01@contoso.com","owner01@contoso.com" -CreatePlannerTask -PlannerPlanId "<PLANNER_PLAN_ID>" -PlannerBucketId "<PLANNER_BUCKET_ID>"
 # ==============================================================
 
 param (
@@ -11,7 +11,9 @@ param (
     [string] $FunctionUrl = "",
     [string] $ApiKey      = "",
     [string] $UserAccessToken = "",
+    [switch] $UseAzApiToken,
     [switch] $UseAzGraphToken,
+    [string] $ApiAppId = "",
     [string[]] $Upns = @(),
     [string] $ChatId = "",
     [switch] $CreatePlannerTask,
@@ -46,6 +48,9 @@ if (-not $PlannerBucketId) {
 if (-not $PlannerAssigneeUpn) {
     $PlannerAssigneeUpn = $env:VULN_NOTIFY_PLANNER_ASSIGNEE_UPN
 }
+if (-not $ApiAppId) {
+    $ApiAppId = $env:VULN_NOTIFY_API_APP_ID
+}
 
 if (-not $ApiKey) {
     Write-Host "[ERROR] ApiKey が未指定です。-ApiKey または VULN_NOTIFY_API_KEY を設定してください。" -ForegroundColor Red
@@ -56,12 +61,19 @@ if (-not $UserAccessToken) {
     $UserAccessToken = $env:VULN_NOTIFY_USER_TOKEN
 }
 
-if (-not $UserAccessToken -and $UseAzGraphToken) {
-    $UserAccessToken = az account get-access-token --resource-type ms-graph --query accessToken -o tsv
+if (-not $UserAccessToken -and ($UseAzApiToken -or $UseAzGraphToken)) {
+    if (-not $ApiAppId) {
+        Write-Host "[ERROR] API AppId が未指定です。-ApiAppId または VULN_NOTIFY_API_APP_ID を設定してください。" -ForegroundColor Red
+        exit 1
+    }
+    if ($UseAzGraphToken) {
+        Write-Host "[WARN] -UseAzGraphToken は非推奨です。access_as_user トークン取得のため -UseAzApiToken を利用してください。" -ForegroundColor Yellow
+    }
+    $UserAccessToken = az account get-access-token --scope "api://$ApiAppId/access_as_user" --query accessToken -o tsv
 }
 
 if (-not $UserAccessToken) {
-    Write-Host "[ERROR] UserAccessToken が未指定です。-UserAccessToken / VULN_NOTIFY_USER_TOKEN / -UseAzGraphToken を利用してください。" -ForegroundColor Red
+    Write-Host "[ERROR] UserAccessToken が未指定です。-UserAccessToken / VULN_NOTIFY_USER_TOKEN / -UseAzApiToken (-ApiAppId 指定) を利用してください。" -ForegroundColor Red
     exit 1
 }
 
