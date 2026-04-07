@@ -21,7 +21,7 @@ $notifyUrl
 必須ヘッダー:
 
 - x-api-key: Key Vault の API-KEY
-- Authorization: Bearer <api://<API_APP_ID>/access_as_user token>
+- Authorization: Bearer <user token or access_as_user token>
 - Content-Type: application/json
 
 ### 2-1. API Key 取得例
@@ -36,9 +36,6 @@ $apiKey = az keyvault secret show --vault-name $kvName --name API-KEY --query va
 ```powershell
 $token = az account get-access-token --scope "api://<API_APP_ID>/access_as_user" --query accessToken -o tsv
 ```
-
-`/api/notify` は API 向け delegated トークンのみ受け付けます。  
-`az account get-access-token --resource-type ms-graph` で取得した `aud=Graph` トークンは送信に使用できません。
 
 ## 3. JSON スキーマ
 
