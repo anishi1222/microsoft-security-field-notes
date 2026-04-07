@@ -20,6 +20,13 @@ GRAPH_SCOPES = [
     "https://graph.microsoft.com/Tasks.ReadWrite",
     "https://graph.microsoft.com/User.ReadBasic.All",
 ]
+OBO_REQUIRED_SCOPE = "access_as_user"
+
+
+class OboTokenAcquisitionError(RuntimeError):
+    def __init__(self, message: str, www_authenticate: str = "") -> None:
+        super().__init__(message)
+        self.www_authenticate = www_authenticate
 
 
 def _extract_bearer_token(req: func.HttpRequest) -> str:
@@ -45,23 +52,72 @@ def _decode_jwt_payload_unverified(token: str) -> dict:
         return {}
 
 
-def _is_graph_audience_token(token: str) -> bool:
-    claims = _decode_jwt_payload_unverified(token)
-    aud = str(claims.get("aud", "")).lower()
-    return aud in {
-        "00000003-0000-0000-c000-000000000000",
-        "https://graph.microsoft.com",
-        "https://graph.microsoft.com/",
+def _normalize_claim_set(claim: object) -> set[str]:
+    if isinstance(claim, str):
+        value = claim.strip().lower().rstrip("/")
+        return {value} if value else set()
+    if isinstance(claim, list):
+        values = set()
+        for item in claim:
+            value = str(item).strip().lower().rstrip("/")
+            if value:
+                values.add(value)
+        return values
+    return set()
+
+
+def _validate_user_assertion_for_obo(user_token: str) -> None:
+    claims = _decode_jwt_payload_unverified(user_token)
+    if not claims:
+        raise ValueError("Bearer トークンの形式が不正です")
+
+    tenant_id = os.environ["TENANT_ID"].strip().lower()
+    client_id = os.environ["CLIENT_ID"].strip().lower()
+
+    expected_audiences = {client_id, f"api://{client_id}"}
+    configured_api_audience = str(os.environ.get("API_AUDIENCE", "")).strip().lower().rstrip("/")
+    if configured_api_audience:
+        expected_audiences.add(configured_api_audience)
+
+    token_audiences = _normalize_claim_set(claims.get("aud"))
+    if not token_audiences.intersection(expected_audiences):
+        raise ValueError(
+            "Bearer トークンの aud が API 用ではありません。"
+            "api://<API_APP_ID>/access_as_user スコープのトークンを指定してください"
+        )
+
+    token_tenant_id = str(claims.get("tid", "")).strip().lower()
+    if not token_tenant_id or token_tenant_id != tenant_id:
+        raise ValueError("Bearer トークンの tid が想定テナントと一致しません")
+
+    issuer = str(claims.get("iss", "")).strip().lower().rstrip("/")
+    allowed_issuers = {
+        f"https://login.microsoftonline.com/{tenant_id}",
+        f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+        f"https://sts.windows.net/{tenant_id}",
     }
+    if issuer not in allowed_issuers:
+        raise ValueError("Bearer トークンの issuer が想定外です")
+
+    scopes = {scope for scope in str(claims.get("scp", "")).strip().split(" ") if scope}
+    if OBO_REQUIRED_SCOPE not in scopes:
+        if claims.get("roles"):
+            raise ValueError(
+                "アプリ権限トークンは受け付けません。"
+                "delegated の access_as_user スコープを使用してください"
+            )
+        raise ValueError("Bearer トークンに access_as_user スコープがありません")
+
+
+def _escape_quoted_header_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _get_graph_token_on_behalf_of(user_token: str) -> str:
     tenant_id = os.environ["TENANT_ID"]
     client_id = os.environ["CLIENT_ID"]
     client_secret = os.environ["CLIENT_SECRET"]
-
-    if _is_graph_audience_token(user_token):
-        return user_token
+    _validate_user_assertion_for_obo(user_token)
 
     cca = msal.ConfidentialClientApplication(
         client_id=client_id,
@@ -75,7 +131,15 @@ def _get_graph_token_on_behalf_of(user_token: str) -> str:
     access_token = result.get("access_token")
     if not access_token:
         detail = result.get("error_description") or result.get("error") or "unknown_error"
-        raise RuntimeError(f"OBO token acquisition failed: {detail}")
+        claims = str(result.get("claims", "")).strip()
+        www_authenticate = ""
+        if claims:
+            escaped_claims = _escape_quoted_header_value(claims)
+            www_authenticate = f'Bearer error="insufficient_claims", claims="{escaped_claims}"'
+        raise OboTokenAcquisitionError(
+            f"OBO token acquisition failed: {detail}",
+            www_authenticate=www_authenticate,
+        )
     return access_token
 
 
@@ -333,6 +397,16 @@ def notify(req: func.HttpRequest) -> func.HttpResponse:
     try:
         user_token = _extract_bearer_token(req)
         token = _get_graph_token_on_behalf_of(user_token)
+    except OboTokenAcquisitionError as ex:
+        logging.exception("Graph OBO トークン取得失敗")
+        headers = {}
+        if ex.www_authenticate:
+            headers["WWW-Authenticate"] = ex.www_authenticate
+        return func.HttpResponse(
+            f"Delegated token acquisition failed: {ex}",
+            status_code=401,
+            headers=headers,
+        )
     except Exception as ex:
         logging.exception("Graph OBO トークン取得失敗")
         return func.HttpResponse(f"Delegated token acquisition failed: {ex}", status_code=401)

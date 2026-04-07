@@ -3,7 +3,8 @@
 ## 1. 現在のアーキテクチャ
 - Function エンドポイント: `POST /api/notify`
 - 呼び出し元 -> Function 認証: `x-api-key`
-- Function -> Graph 認証: OBO (委任権限)
+- Function -> Graph 認証: OBO (委任権限, 強制)
+- Bearer は API 向け (`api://<API_APP_ID>/access_as_user`) delegated トークンのみ許可
 - API 側アプリ: `vuln-notify-api-app` (`<API_APP_ID>`)
 - クライアント側アプリ: `vuln-notify-client-app` (`<CLIENT_APP_ID>`)
 
@@ -17,6 +18,7 @@
   - `ChatMessage.Send`
   - `Tasks.ReadWrite`
   - `User.ReadBasic.All`
+- Application 権限（例: `Teamwork.Migrate.All`）は本運用では不要
 - 管理者同意: 付与済み
 
 ### クライアント側アプリ (`vuln-notify-client-app`)
@@ -90,3 +92,5 @@ $env:VULN_NOTIFY_API_KEY = az keyvault secret show --vault-name <KEY_VAULT_NAME>
   - `ChatMessage.Send` が未同意、またはトークン audience 不一致
 - `403` (`/planner/tasks`)
   - `Tasks.ReadWrite` が未同意
+- `401 Delegated token acquisition failed`
+  - `access_as_user` スコープ不足、または `aud`/`tid`/`iss` 不一致
