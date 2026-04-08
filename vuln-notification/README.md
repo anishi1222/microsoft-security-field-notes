@@ -264,6 +264,8 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
    - 同意表示名: `Access vuln-notify API as user`（任意の分かりやすい名称で可）
    - 状態: Enabled
 
+![alt text](image.png)
+
 #### Step 3. API 側に Graph Delegated Permissions を追加
 
 1. `vuln-notify-api-app` > API のアクセス許可 を開く
