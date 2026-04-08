@@ -264,7 +264,11 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
    - 同意表示名: `Access vuln-notify API as user`（任意の分かりやすい名称で可）
    - 状態: Enabled
 
-![alt text](image.png)
+
+<p align="center">
+  <img src="image.png" alt="Expose an API で access_as_user スコープを設定する画面" width="900" />
+</p>
+<p align="center"><em>Step 2: Expose an API で access_as_user スコープを追加</em></p>
 
 #### Step 3. API 側に Graph Delegated Permissions を追加
 
