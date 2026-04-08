@@ -118,13 +118,42 @@ vuln-notification/
 | `TENANT-ID` | Entra テナント ID |
 | `CLIENT-ID` | API 側アプリの AppId |
 | `CLIENT-SECRET` | API 側アプリのシークレット |
-| `API-KEY` | Function 呼び出しキー |
+| `API-KEY` | Function 呼び出しキー（運用者が生成した十分に長いランダム文字列を設定） |
+
+> [!NOTE]
+> **Information:** `API-KEY` は手入力の固定文字列ではなく、暗号学的に安全な乱数から生成してください。PowerShell 例:
+>
+> ```powershell
+> $bytes = New-Object byte[] 48
+> [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+> $apiKey = [Convert]::ToBase64String($bytes)
+> $apiKey
+> ```
 
 Function App 設定は Key Vault 参照を利用します。
 
 ## 環境構築手順（詳細）
 
 この章は「新規環境を 0 から構築する」場合の手順です。既存環境の更新だけを行う場合は、デプロイ手順とテスト手順のみ実施してください。
+
+### 0. GitHub から対象ファイルを取得
+
+このガイドで利用するファイル一式は GitHub リポジトリから取得します。
+
+#### 方法 A: `git clone`（推奨）
+
+```powershell
+git clone https://github.com/mattu0119/microsoft-security-field-notes.git
+cd microsoft-security-field-notes/vuln-notification
+```
+
+#### 方法 B: ZIP ダウンロード
+
+1. GitHub のリポジトリページで `Code` > `Download ZIP` を選択
+2. ZIP を展開
+3. 展開したフォルダ内の `vuln-notification` ディレクトリに移動
+
+この後のコマンドは `vuln-notification` ディレクトリをカレントとして実行します。
 
 ### 1. 前提ツール
 
