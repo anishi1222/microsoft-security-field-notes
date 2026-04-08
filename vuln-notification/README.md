@@ -196,6 +196,12 @@ az deployment group create \
   --parameters @azuredeploy.parameters.json
 ```
 
+1行版:
+
+```powershell
+az deployment group create --name $deploymentName --resource-group vuln-notify-rg --template-file azuredeploy.bicep --parameters "@azuredeploy.parameters.json"
+```
+
 必要に応じてサフィックスを明示指定できます。
 
 ```powershell
@@ -205,6 +211,12 @@ az deployment group create \
   --template-file azuredeploy.bicep \
   --parameters @azuredeploy.parameters.json \
   --parameters nameSuffix=dev01
+```
+
+1行版:
+
+```powershell
+az deployment group create --name $deploymentName --resource-group vuln-notify-rg --template-file azuredeploy.bicep --parameters "@azuredeploy.parameters.json" --parameters nameSuffix=dev01
 ```
 
 展開後に以下が作成されていることを確認します。
@@ -362,6 +374,12 @@ az functionapp config appsettings list \
   --output table
 ```
 
+1行版:
+
+```powershell
+az functionapp config appsettings list --name $funcApp --resource-group vuln-notify-rg --output table
+```
+
 確認ポイント:
 
 - `TENANT_ID`
@@ -377,6 +395,12 @@ az functionapp config appsettings list \
 az functionapp restart \
   --name $funcApp \
   --resource-group vuln-notify-rg
+```
+
+1行版:
+
+```powershell
+az functionapp restart --name $funcApp --resource-group vuln-notify-rg
 ```
 
 #### Step 4. 反映後の動作確認（最小）
@@ -409,6 +433,12 @@ az rest \
   --output json
 ```
 
+1行版:
+
+```powershell
+az rest --method GET --url "https://graph.microsoft.com/v1.0/me/planner/plans" --headers "Authorization=Bearer $graphToken" --output json
+```
+
 出力の `value[].id` が Planner Plan ID (`plan_id`) です。
 
 #### Step 3. Plan に属する Bucket を確認
@@ -421,6 +451,12 @@ az rest \
   --url "https://graph.microsoft.com/v1.0/planner/plans/$planId/buckets" \
   --headers "Authorization=Bearer $graphToken" \
   --output json
+```
+
+1行版:
+
+```powershell
+az rest --method GET --url "https://graph.microsoft.com/v1.0/planner/plans/$planId/buckets" --headers "Authorization=Bearer $graphToken" --output json
 ```
 
 出力の `value[].id` が Bucket ID (`bucket_id`) です。
