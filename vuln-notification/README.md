@@ -272,7 +272,7 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
    - 状態: Enabled
 
 <p align="center">
-  <img src="image-1.png" alt="Scope 追加時に管理者同意の表示名を設定する画面" width="900" />
+  <img src="image-2.png" alt="Scope 追加時に管理者同意の表示名を設定する画面" width="900" />
 </p>
 <p align="center"><em>Step 2: Scope 追加時に管理者同意の表示名を入力</em></p>
 
