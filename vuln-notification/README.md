@@ -55,7 +55,7 @@ sequenceDiagram
   participant Entra as Entra ID
   participant Graph as Microsoft Graph
 
-  Client->>Func: POST /api/notify\nBearer user/access_as_user token\nx-api-key
+  Client->>Func: POST /api/notify\nBearer api://<API_APP_ID>/access_as_user token\nx-api-key
   Func->>Entra: OBO token request\n(user assertion + CLIENT_ID/SECRET)
   Entra-->>Func: Graph delegated access token
   Func->>Graph: /users で UPN 解決
@@ -105,6 +105,7 @@ vuln-notification/
   - `ChatMessage.Send`
   - `Tasks.ReadWrite`
   - `User.ReadBasic.All`
+- Application 権限（例: `Teamwork.Migrate.All`）は本実装では不要です
 
 ### クライアント側アプリ
 
@@ -439,9 +440,12 @@ Pop-Location
 POST https://<FUNCTION_APP_NAME>.azurewebsites.net/api/notify
 Headers:
   x-api-key: <API-KEY>
-  Authorization: Bearer <user token or access_as_user token>
+  Authorization: Bearer <api://<API_APP_ID>/access_as_user token>
 Content-Type: application/json
 ```
+
+`Authorization` は API 側 (`api://<API_APP_ID>/access_as_user`) 向けの delegated トークンのみ受け付けます。  
+`aud=Graph` トークンや app-only (`roles`) トークンは受け付けません。
 
 ### 最小リクエスト例
 
