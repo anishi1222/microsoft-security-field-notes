@@ -388,7 +388,42 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 > [!WARNING]
 > クライアント側で `access_as_user` が付与されていない場合、`api://<API_APP_ID>/access_as_user` のトークン取得に失敗します。
 
-#### Step 7. 最終確認（OBO 前提）
+#### Step 7. Azure CLI 用の管理者同意を構成
+
+Azure CLI（`az login --scope`）でテスト用トークンを取得するには、Azure CLI アプリ（AppId: `04b07795-8ddb-461a-bbee-02f9e1bf7b46`）に対して API スコープへの管理者同意が必要です。
+
+##### 方法 A: knownClientApplications に Azure CLI を追加（推奨）
+
+1. `vuln-notify-api-app` > マニフェスト を開く
+2. `knownClientApplications` を以下に変更:
+   ```json
+   "knownClientApplications": ["04b07795-8ddb-461a-bbee-02f9e1bf7b46"]
+   ```
+3. 保存
+4. `vuln-notify-api-app` > API のアクセス許可 > `管理者の同意を与えます` を再実行
+
+これにより Azure CLI 経由でのトークン取得時に、API 側の同意が自動的に適用されます。
+
+##### 方法 B: 管理者同意 URL を使う
+
+管理者に以下の URL をブラウザで開いてもらい、同意を付与してもらいます。
+
+```text
+https://login.microsoftonline.com/<TENANT_ID>/adminconsent?client_id=04b07795-8ddb-461a-bbee-02f9e1bf7b46&scope=api://<API_APP_ID>/access_as_user
+```
+
+> [!NOTE]
+> 管理者同意の付与には以下のいずれかの Entra ID ロールが必要です。
+>
+> | ロール | 備考 |
+> |---|---|
+> | `Cloud Application Administrator` | 推奨（最小権限）|
+> | `Application Administrator` | |
+> | `Global Administrator` | 最も広い権限 |
+>
+> 同意が未付与の場合、`az login --scope` 実行時に「管理者の承認が必要」画面が表示されます。
+
+#### Step 8. 最終確認（OBO 前提）
 
 以下が揃っていれば OBO 前提の Entra 構成は完了です。
 
@@ -397,6 +432,7 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 - クライアント側で `access_as_user` が付与済み
 - Graph Delegated permissions が Granted 済み
 - API 側 Client secret が払い出し済み
+- Azure CLI 用の管理者同意が付与済み（テスト時に必要）
 
 ### 5. Key Vault シークレットを投入
 
@@ -760,17 +796,37 @@ Content-Type: application/json
 
 ### 9. テスト手順
 
+#### 前提: Azure CLI 用の管理者同意
+
+Azure CLI でカスタム API スコープのトークンを取得するには、事前に管理者同意が必要です（Step 4 の Step 7 で構成済み）。
+
+未構成の場合、`az login --scope` 実行時に「管理者の承認が必要」画面が表示されます。Step 4 の Step 7 を実施してください。
+
+#### トークン取得
+
+初回のみ、Azure CLI でカスタム API スコープへの対話的ログインが必要です。
+
+```powershell
+az logout
+az login --scope "api://<API_APP_ID>/access_as_user"
+```
+
+同意済みであれば、トークン取得とテスト実行を行います。
+
 ```powershell
 $token = az account get-access-token --scope "api://<API_APP_ID>/access_as_user" --query accessToken -o tsv
 
-.\function-app\Test-VulnNotify.ps1 \
-  -UserAccessToken $token \
-  -UserAccessToken $token \
-  -Upns 'analyst01@contoso.com','owner01@contoso.com','manager01@contoso.com' \
-  -CreatePlannerTask \
-  -PlannerPlanId '<PLANNER_PLAN_ID>' \
+.\function-app\Test-VulnNotify.ps1 `
+  -UserAccessToken $token `
+  -FunctionAppName $funcApp `
+  -Upns '<YOUR_UPN>','analyst01@contoso.com','owner01@contoso.com' `
+  -CreatePlannerTask `
+  -PlannerPlanId '<PLANNER_PLAN_ID>' `
   -PlannerBucketId '<PLANNER_BUCKET_ID>'
 ```
+
+> [!IMPORTANT]
+> `-Upns` には **自分自身の UPN を必ず含めてください**。グループチャット作成 API (`POST /chats`) は、呼び出し元ユーザーがメンバーに含まれていることを要求します。自分の UPN が含まれていない場合、`The caller must be one of the members specified in request body` エラーが発生します。
 
 #### 最近の検証結果
 
