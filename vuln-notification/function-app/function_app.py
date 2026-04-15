@@ -308,11 +308,6 @@ def _create_planner_task(token: str, body: dict, resolved_users: list[dict]) -> 
 
 @app.route(route="notify", methods=["POST"])
 def notify(req: func.HttpRequest) -> func.HttpResponse:
-    api_key = os.environ.get("API_KEY", "")
-    req_key = req.headers.get("x-api-key", "")
-    if not api_key or req_key != api_key:
-        return func.HttpResponse("Unauthorized", status_code=401)
-
     try:
         body = req.get_json()
     except Exception:

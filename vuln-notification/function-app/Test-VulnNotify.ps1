@@ -1,15 +1,14 @@
 ﻿# ==============================================================
 # 脆弱性通知システム - 動作確認用 PowerShell スクリプト
 # 使用方法:
-#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UserAccessToken "<Entra user token>" -Upns "analyst01@contoso.com","owner01@contoso.com"
-#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UseAzGraphToken -Upns "analyst01@contoso.com","owner01@contoso.com"
-#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -ApiKey "xxx" -UseAzGraphToken -Upns "analyst01@contoso.com","owner01@contoso.com" -CreatePlannerTask -PlannerPlanId "<PLANNER_PLAN_ID>" -PlannerBucketId "<PLANNER_BUCKET_ID>"
+#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -UserAccessToken "<Entra user token>" -Upns "analyst01@contoso.com","owner01@contoso.com"
+#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -UseAzGraphToken -Upns "analyst01@contoso.com","owner01@contoso.com"
+#   .\function-app\Test-VulnNotify.ps1 -FunctionAppName "<FUNCTION_APP_NAME>" -UseAzGraphToken -Upns "analyst01@contoso.com","owner01@contoso.com" -CreatePlannerTask -PlannerPlanId "<PLANNER_PLAN_ID>" -PlannerBucketId "<PLANNER_BUCKET_ID>"
 # ==============================================================
 
 param (
     [string] $FunctionAppName = "",
     [string] $FunctionUrl = "",
-    [string] $ApiKey      = "",
     [string] $UserAccessToken = "",
     [switch] $UseAzGraphToken,
     [string[]] $Upns = @(),
@@ -31,9 +30,6 @@ if (-not $FunctionUrl) {
     $FunctionUrl = "https://$FunctionAppName.azurewebsites.net/api/notify"
 }
 
-if (-not $ApiKey) {
-    $ApiKey = $env:VULN_NOTIFY_API_KEY
-}
 if ($Upns.Count -eq 0 -and $env:VULN_NOTIFY_UPNS) {
     $Upns = $env:VULN_NOTIFY_UPNS.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 }
@@ -45,11 +41,6 @@ if (-not $PlannerBucketId) {
 }
 if (-not $PlannerAssigneeUpn) {
     $PlannerAssigneeUpn = $env:VULN_NOTIFY_PLANNER_ASSIGNEE_UPN
-}
-
-if (-not $ApiKey) {
-    Write-Host "[ERROR] ApiKey が未指定です。-ApiKey または VULN_NOTIFY_API_KEY を設定してください。" -ForegroundColor Red
-    exit 1
 }
 
 if (-not $UserAccessToken) {
@@ -136,7 +127,6 @@ $Payload = @{
 # ── リクエスト送信 ──────────────────────────────────────────────
 $Headers = @{
     "Content-Type" = "application/json"
-    "x-api-key"    = $ApiKey
     "Authorization" = "Bearer $UserAccessToken"
 }
 

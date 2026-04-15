@@ -129,10 +129,6 @@ resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
           name: 'CLIENT_SECRET'
           value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=CLIENT-SECRET)'
         }
-        {
-          name: 'API_KEY'
-          value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=API-KEY)'
-        }
       ]
     }
   }

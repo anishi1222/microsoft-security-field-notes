@@ -20,18 +20,10 @@ $notifyUrl
 
 必須ヘッダー:
 
-- x-api-key: Key Vault の API-KEY
 - Authorization: Bearer <user token or access_as_user token>
 - Content-Type: application/json
 
-### 2-1. API Key 取得例
-
-```powershell
-$kvName = az deployment group show -g vuln-notify-rg -n "vuln-notify-infra" --query "properties.outputs.keyVaultName.value" -o tsv
-$apiKey = az keyvault secret show --vault-name $kvName --name API-KEY --query value -o tsv
-```
-
-### 2-2. Bearer token 取得例
+### 2-1. Bearer token 取得例
 
 ```powershell
 $token = az account get-access-token --scope "api://<API_APP_ID>/access_as_user" --query accessToken -o tsv
@@ -183,7 +175,6 @@ $body = @{
 } | ConvertTo-Json -Depth 8
 
 $headers = @{
-  "x-api-key" = $apiKey
   "Authorization" = "Bearer $token"
   "Content-Type" = "application/json"
 }

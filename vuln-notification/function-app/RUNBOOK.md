@@ -2,7 +2,6 @@
 
 ## 1. 現在のアーキテクチャ
 - Function エンドポイント: `POST /api/notify`
-- 呼び出し元 -> Function 認証: `x-api-key`
 - Function -> Graph 認証: OBO (委任権限)
 - API 側アプリ: `vuln-notify-api-app` (`<API_APP_ID>`)
 - クライアント側アプリ: `vuln-notify-client-app` (`<CLIENT_APP_ID>`)
@@ -29,7 +28,6 @@
 - `TENANT-ID`
 - `CLIENT-ID` (値: `<API_APP_ID>`)
 - `CLIENT-SECRET` (`vuln-notify-api-app` のシークレット)
-- `API-KEY`
 
 ## 4. Function コードのデプロイ
 ```powershell
@@ -54,15 +52,13 @@ az login --tenant "<TENANT_ID>" --scope "api://<API_APP_ID>/access_as_user"
 ### 6.2 通知のみテスト
 ```powershell
 $token = az account get-access-token --scope "api://<API_APP_ID>/access_as_user" --query accessToken -o tsv
-$env:VULN_NOTIFY_API_KEY = az keyvault secret show --vault-name <KEY_VAULT_NAME> --name API-KEY --query value -o tsv
-.\function-app\Test-VulnNotify.ps1 -ApiKey $env:VULN_NOTIFY_API_KEY -UserAccessToken $token -Upns "analyst01@contoso.com","owner01@contoso.com","manager01@contoso.com"
+.\function-app\Test-VulnNotify.ps1 -UserAccessToken $token -Upns "analyst01@contoso.com","owner01@contoso.com","manager01@contoso.com"
 ```
 
 ### 6.3 Planner 連携テスト
 ```powershell
 $token = az account get-access-token --scope "api://<API_APP_ID>/access_as_user" --query accessToken -o tsv
-$env:VULN_NOTIFY_API_KEY = az keyvault secret show --vault-name <KEY_VAULT_NAME> --name API-KEY --query value -o tsv
-.\function-app\Test-VulnNotify.ps1 -ApiKey $env:VULN_NOTIFY_API_KEY -UserAccessToken $token -Upns "analyst01@contoso.com","owner01@contoso.com","manager01@contoso.com" -CreatePlannerTask -PlannerPlanId "<PLANNER_PLAN_ID>" -PlannerBucketId "<PLANNER_BUCKET_ID>"
+.\function-app\Test-VulnNotify.ps1 -UserAccessToken $token -Upns "analyst01@contoso.com","owner01@contoso.com","manager01@contoso.com" -CreatePlannerTask -PlannerPlanId "<PLANNER_PLAN_ID>" -PlannerBucketId "<PLANNER_BUCKET_ID>"
 ```
 
 ## 7. Planner 担当者割り当て仕様
