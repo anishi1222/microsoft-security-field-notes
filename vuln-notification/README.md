@@ -632,28 +632,8 @@ func azure functionapp publish $funcApp --python --build local
 Pop-Location
 ```
 
-> [!WARNING]
-> `Error creating a Blob container reference. Please make sure your connection string in "AzureWebJobsStorage" is valid` が出る場合は、`AzureWebJobsStorage` を再設定してから再デプロイしてください。
->
-> ```powershell
-> $stName = az storage account list -g vuln-notify-rg --query "[0].name" -o tsv
-> $connStr = az storage account show-connection-string --name $stName --resource-group vuln-notify-rg --query connectionString -o tsv
-> az functionapp config appsettings set --name $funcApp --resource-group vuln-notify-rg --settings "AzureWebJobsStorage=$connStr"
-> az functionapp restart --name $funcApp --resource-group vuln-notify-rg
->
-> # テンプレート修正（azuredeploy.bicep）を既存環境へ反映する場合
-> az deployment group create --name $deploymentName --resource-group vuln-notify-rg --template-file azuredeploy.bicep --parameters "@azuredeploy.parameters.json"
->
-> # Function App コードを再デプロイ
-> Push-Location function-app
-> func azure functionapp publish $funcApp --python --build local
-> Pop-Location
-> ```
-
-<p align="center">
-  <img src="images/image-11.png" alt="AzureWebJobsStorage の接続文字列を再設定して再デプロイする手順の実行例" width="900" />
-</p>
-<p align="center"><em>AzureWebJobsStorage エラー発生時の復旧手順（実行例）</em></p>
+> [!NOTE]
+> このテンプレートでは `AzureWebJobsStorage` を **Managed Identity（ID ベース接続）** で構成しています。Function App のアプリ設定には `AzureWebJobsStorage__accountName` のみが設定され、アクセスキーは使用しません。Bicep テンプレートで Storage Blob Data Owner / Storage Queue Data Contributor / Storage Table Data Contributor の 3 ロールを自動割り当てします。
 
 > [!NOTE]
 > 現在のテンプレートは Linux Consumption プラン（Y1 SKU）を使用しています。Linux Consumption は **2028年9月30日に EOL** となるため、本番運用では [Flex Consumption プラン](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan) への移行を検討してください。
