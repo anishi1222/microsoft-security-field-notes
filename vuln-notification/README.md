@@ -628,7 +628,7 @@ $funcApp = $funcUrl -replace '^https://','' -replace '\.azurewebsites\.net$',''
 "Function App: $funcApp"
 
 Push-Location function-app
-func azure functionapp publish $funcApp --python --build local
+func azure functionapp publish $funcApp --python --build remote
 Pop-Location
 ```
 
