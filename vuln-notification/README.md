@@ -476,6 +476,13 @@ $funcApp = $funcUrl -replace '^https://','' -replace '\\.azurewebsites\\.net$','
 "Function App: $funcApp"
 ```
 
+> [!WARNING]
+> 出力が空の場合、`$deploymentName` 変数が未定義の可能性があります。新しいターミナルを開いた場合は変数が失われるため、以下を再実行してください。
+>
+> ```powershell
+> $deploymentName = "vuln-notify-infra"
+> ```
+
 #### Step 2. アプリ設定を確認
 
 ```powershell
@@ -526,6 +533,20 @@ az functionapp show --name $funcApp --resource-group vuln-notify-rg --query "sta
 
 Planner タスク連携を使う場合は `plan_id` と `bucket_id` が必要です。
 
+#### 前提条件
+
+- Planner プランが作成済みであること
+- 自分がそのプランの所属する **Microsoft 365 グループのメンバー**であること
+
+プランが未作成の場合は、以下のいずれかの方法で事前に作成してください。
+
+| 方法 | 手順 |
+|---|---|
+| Teams から作成 | 対象チャネルで `+` タブ追加 > `Tasks by Planner` を選択 > 新しいプランを作成 |
+| Web から作成 | [tasks.office.com](https://tasks.office.com) にアクセスし、`新しいプラン` を作成 |
+
+プラン作成者は自動的に所有者兼メンバーになるため、作成後すぐに Plan ID を取得できます。
+
 #### Step 1. Graph トークンを取得
 
 ```powershell
@@ -550,6 +571,14 @@ az rest --method GET --url "https://graph.microsoft.com/v1.0/me/planner/plans" -
 ```
 
 出力の `value[].id` が Planner Plan ID (`plan_id`) です。
+
+> [!NOTE]
+> `/me/planner/plans` は自分がメンバーになっている Planner プランのみ返します。`"value": []` で空の場合は、対象プランが所属する Microsoft 365 グループのメンバーになっているか確認してください。プランが未作成の場合は、Teams チャネルで `Tasks by Planner` タブを追加するか [tasks.office.com](https://tasks.office.com) で新規作成します。
+
+<p align="center">
+  <img src="image-10.png" alt="Graph API /me/planner/plans の実行結果で Plan ID を確認する画面" width="900" />
+</p>
+<p align="center"><em>Step 2: /me/planner/plans の出力から id（Plan ID）を取得</em></p>
 
 #### Step 3. Plan に属する Bucket を確認
 
@@ -587,24 +616,6 @@ $buckets.value | Select-Object id,name,orderHint | Format-Table -AutoSize
 - `-PlannerPlanId` に `plan_id` を指定
 - `-PlannerBucketId` に `bucket_id` を指定
 - JSON で送る場合は `planner.plan_id` と `planner.bucket_id` に指定
-
-### 8. ローカル依存関係（任意）
-
-ローカル実行や静的チェックを行う場合:
-
-```powershell
-Push-Location function-app
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Pop-Location
-```
-
-### 9. 初回疎通確認
-
-1. この後の「デプロイ手順」でコードを publish
-2. 「テスト手順」を実行して `status: sent` を確認
-3. Planner 有効時は `planner_task_id` と担当者数を確認
 
 ## API 仕様（現在）
 
@@ -660,13 +671,46 @@ Content-Type: application/json
 - `planner.assignee_upn` を指定した場合: その 1 名のみ割り当て
 - `planner.assignee_upns` を指定した場合: 指定した複数 UPN を割り当て
 
-## デプロイ手順
+## Function App のコードデプロイ
+
+Function App のコード（`function_app.py` 等）を Azure にアップロードします。Function App 名はデプロイごとにサフィックスが異なるため、`$funcApp` 変数を使用します。
 
 ```powershell
+$deploymentName = "vuln-notify-infra"
+$funcUrl = az deployment group show -g vuln-notify-rg -n $deploymentName --query "properties.outputs.functionAppUrl.value" -o tsv
+$funcApp = $funcUrl -replace '^https://','' -replace '\.azurewebsites\.net$',''
+"Function App: $funcApp"
+
 Push-Location function-app
-func azure functionapp publish func-vuln-notify-prod --python --build remote
+func azure functionapp publish $funcApp --python --build local
 Pop-Location
 ```
+
+> [!WARNING]
+> `Error creating a Blob container reference. Please make sure your connection string in "AzureWebJobsStorage" is valid` が出る場合は、`AzureWebJobsStorage` を再設定してから再デプロイしてください。
+>
+> ```powershell
+> $stName = az storage account list -g vuln-notify-rg --query "[0].name" -o tsv
+> $connStr = az storage account show-connection-string --name $stName --resource-group vuln-notify-rg --query connectionString -o tsv
+> az functionapp config appsettings set --name $funcApp --resource-group vuln-notify-rg --settings "AzureWebJobsStorage=$connStr"
+> az functionapp restart --name $funcApp --resource-group vuln-notify-rg
+>
+> # テンプレート修正（azuredeploy.bicep）を既存環境へ反映する場合
+> az deployment group create --name $deploymentName --resource-group vuln-notify-rg --template-file azuredeploy.bicep --parameters "@azuredeploy.parameters.json"
+>
+> # Function App コードを再デプロイ
+> Push-Location function-app
+> func azure functionapp publish $funcApp --python --build local
+> Pop-Location
+> ```
+
+<p align="center">
+  <img src="image-11.png" alt="AzureWebJobsStorage の接続文字列を再設定して再デプロイする手順の実行例" width="900" />
+</p>
+<p align="center"><em>AzureWebJobsStorage エラー発生時の復旧手順（実行例）</em></p>
+
+> [!NOTE]
+> 現在のテンプレートは Linux Consumption プラン（Y1 SKU）を使用しています。Linux Consumption は **2028年9月30日に EOL** となるため、本番運用では [Flex Consumption プラン](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan) への移行を検討してください。
 
 ## テスト手順
 
