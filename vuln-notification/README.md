@@ -209,6 +209,20 @@ $PSVersionTable.PSVersion
 
 簡易運用では `Owner` を付与しても実行できますが、公開環境では上記 2 ロール分離を推奨します。
 
+### 1-2. Entra ID の管理者同意に必要なロール
+
+Step 4 の Entra アプリ構成で `管理者の同意を与えます（Grant admin consent）` を実行するには、以下のいずれかの Entra ID ロールが必要です。
+
+| Entra ID ロール | 備考 |
+|---|---|
+| `Cloud Application Administrator` | 推奨（最小権限） |
+| `Application Administrator` | |
+| `Privileged Role Administrator` | |
+| `Global Administrator` | 最も広い権限。必要な場合のみ |
+
+> [!NOTE]
+> ロールが不足している場合、Azure portal の `管理者の同意を与えます` ボタンがグレーアウトされます。テナント管理者に依頼して、上記いずれかのロールを付与してもらってください。
+
 ### 2. Azure サインインとサブスクリプション選択
 
 ```powershell
@@ -280,6 +294,11 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 2. 名前を `vuln-notify-api-app` にして作成
 3. 作成後、`アプリケーション (クライアント) ID` を控える（後で `<API_APP_ID>` として使用）
 
+<p align="center">
+  <img src="image-3.png" alt="Entra ID アプリの登録画面で vuln-notify-api-app を新規登録する画面" width="900" />
+</p>
+<p align="center"><em>Step 1: Entra ID でアプリを新規登録</em></p>
+
 #### Step 2. API 側で Expose an API を設定
 
 1. `vuln-notify-api-app` の Expose an API を開く
@@ -297,7 +316,7 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
    - 状態: Enabled
 
 <p align="center">
-  <img src="image-2.png" alt="Scope 追加時に管理者同意の表示名を設定する画面" width="900" />
+  <img src="image-4.png" alt="Scope 追加時に管理者同意の表示名を設定する画面" width="900" />
 </p>
 <p align="center"><em>Step 2: Scope 追加時に管理者同意の表示名を入力</em></p>
 
@@ -308,6 +327,12 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 #### Step 3. API 側に Graph Delegated Permissions を追加
 
 1. `vuln-notify-api-app` > API のアクセス許可 を開く
+
+<p align="center">
+  <img src="image-5.png" alt="API のアクセス許可画面で Add a permission をクリックする画面" width="900" />
+</p>
+<p align="center"><em>Step 3: API のアクセス許可から権限を追加</em></p>
+
 2. Microsoft Graph の Delegated permissions を追加:
    - `Chat.Create`
    - `ChatMessage.Send`
@@ -315,11 +340,25 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
    - `User.ReadBasic.All`（UPN からユーザー情報を解決するために必要）
 3. `管理者の同意を与えます` を実行して Granted 状態を確認
 
+<p align="center">
+  <img src="image-6.png" alt="Microsoft Graph を選択し Delegated permissions で権限を検索・追加する手順画面" width="900" />
+</p>
+<p align="center"><em>Step 3: Microsoft Graph > Delegated permissions から必要な権限を追加</em></p>
+
 #### Step 4. API 側アプリの Client secret を作成
 
 1. `vuln-notify-api-app` > 証明書とシークレット を開く
 2. 新しいクライアント シークレットを作成
 3. シークレット値を控える（この画面を閉じると再表示不可）
+4. この値を `<API_APP_CLIENT_SECRET>` として Key Vault シークレット投入時に使用
+
+<p align="center">
+  <img src="image-7.png" alt="Certificates & secrets 画面で New client secret を作成する手順" width="900" />
+</p>
+<p align="center"><em>Step 4: 証明書とシークレットからクライアントシークレットを作成</em></p>
+
+> [!TIP]
+> 本番運用では有効期限の 30 日以上前にシークレットを再発行し、Key Vault の `CLIENT-SECRET` を更新してください。更新後は Function App を再起動して新シークレット参照を反映します。
 
 #### Step 5. クライアント側アプリを作成
 
@@ -333,12 +372,22 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 2. `アクセス許可の追加` をクリック
 3. `所属する組織で使用している API` を選択し、`vuln-notify-api-app` を検索して選択
 4. `委任されたアクセス許可` を選択し、`access_as_user` をチェックして `アクセス許可の追加` を実行
+
+<p align="center">
+  <img src="image-8.png" alt="クライアント側アプリで vuln-notify-api-app の access_as_user を Delegated permissions として追加する画面" width="900" />
+</p>
+<p align="center"><em>Step 6: クライアント側アプリに access_as_user の委任権限を付与</em></p>
+
 5. 必要に応じて `管理者の同意を与えます` を実行し、`Granted` 状態を確認
 
-補足:
-仮想マシンを起動できませんでした
-仮想マシン 'hub-hvvm01' を起動できませんでした。エラー: リソース 'Following SKUs have failed for Capacity Restrictions: Standard_D8as_v5' に要求された VM サイズは、現在、場所 'eastus2' で使用できません。別のサイズを試すか、別の場所または別のゾーンにデプロイしてください。詳細については、https://aka.ms/azureskunotavailable をご覧ください。
-- クライアント側で `access_as_user` が付与されていない場合、`api://<API_APP_ID>/access_as_user` のトークン取得に失敗します。
+<p align="center">
+  <img src="image-9.png" alt="クライアント側アプリの API permissions 画面で Grant admin consent を実行する画面" width="900" />
+</p>
+<p align="center"><em>Step 6: Grant admin consent をクリックして管理者同意を付与</em></p>
+
+> [!WARNING]
+> クライアント側で `access_as_user` が付与されていない場合、`api://<API_APP_ID>/access_as_user` のトークン取得に失敗します。
+
 #### Step 7. 最終確認（OBO 前提）
 
 以下が揃っていれば OBO 前提の Entra 構成は完了です。
@@ -349,38 +398,7 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 - Graph Delegated permissions が Granted 済み
 - API 側 Client secret が払い出し済み
 
-### 5. API 側アプリのシークレットを作成
-
-#### Step 1. 対象アプリを開く
-
-1. Entra ID > アプリの登録 を開く
-2. `vuln-notify-api-app` を選択
-3. 左メニューの 証明書とシークレット を開く
-
-#### Step 2. 新しいクライアント シークレットを作成
-
-1. `新しいクライアント シークレット` をクリック
-2. 説明を入力（例: `vuln-notify-prod-secret`）
-3. 有効期限を選択（運用ポリシーに合わせる）
-4. 追加 をクリック
-
-#### Step 3. シークレット値を安全に保管
-
-1. 作成直後に `値 (Value)` をコピー
-2. この値を `<API_APP_CLIENT_SECRET>` として次の Step 6 で Key Vault に保存
-3. 画面を離れると値は再表示できないため、コピー漏れ時は再発行する
-
-#### Step 4. AppId とシークレットの対応を確認
-
-1. アプリの 概要 で `アプリケーション (クライアント) ID` を再確認
-2. `CLIENT-ID` にはこの AppId、`CLIENT-SECRET` には Step 3 の値を設定することを確認
-
-#### Step 5. ローテーション方針を決める（推奨）
-
-- 本番運用では有効期限の 30 日以上前に再発行し、Key Vault の `CLIENT-SECRET` を更新
-- 更新後は Function App を再起動して新シークレット参照を反映
-
-### 6. Key Vault シークレットを投入
+### 5. Key Vault シークレットを投入
 
 この手順は Azure CLI で実施します。まず対象 Key Vault 名を取得してから、必要シークレットを登録します。
 
@@ -416,7 +434,7 @@ az keyvault secret show --vault-name $kvName --name CLIENT-ID --query value -o t
 - 出力された `CLIENT-ID` が `vuln-notify-api-app` の AppId と一致していることを確認
 - `CLIENT-SECRET` は平文確認を最小限にし、ログや履歴に残さない運用を推奨
 
-### 7. Function App 設定の反映確認
+### 6. Function App 設定の反映確認
 
 Function App のアプリ設定で Key Vault 参照が正しく構成されていることを確認し、必要に応じて再起動します。
 
@@ -474,7 +492,7 @@ az functionapp show --name $funcApp --resource-group vuln-notify-rg --query "sta
 - `Running` を確認
 - その後、本 README の「テスト手順」を実行して `status: sent` を確認
 
-### 8. Planner ID / Bucket ID を取得
+### 7. Planner ID / Bucket ID を取得
 
 Planner タスク連携を使う場合は `plan_id` と `bucket_id` が必要です。
 
@@ -540,7 +558,7 @@ $buckets.value | Select-Object id,name,orderHint | Format-Table -AutoSize
 - `-PlannerBucketId` に `bucket_id` を指定
 - JSON で送る場合は `planner.plan_id` と `planner.bucket_id` に指定
 
-### 9. ローカル依存関係（任意）
+### 8. ローカル依存関係（任意）
 
 ローカル実行や静的チェックを行う場合:
 
@@ -552,7 +570,7 @@ pip install -r requirements.txt
 Pop-Location
 ```
 
-### 10. 初回疎通確認
+### 9. 初回疎通確認
 
 1. この後の「デプロイ手順」でコードを publish
 2. 「テスト手順」を実行して `status: sent` を確認
