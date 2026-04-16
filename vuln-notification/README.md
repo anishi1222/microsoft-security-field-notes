@@ -388,42 +388,7 @@ $kvName = az deployment group show -g vuln-notify-rg -n $deploymentName --query 
 > [!WARNING]
 > クライアント側で `access_as_user` が付与されていない場合、`api://<API_APP_ID>/access_as_user` のトークン取得に失敗します。
 
-#### Step 7. Azure CLI 用の管理者同意を構成
-
-Azure CLI（`az login --scope`）でテスト用トークンを取得するには、Azure CLI アプリ（AppId: `04b07795-8ddb-461a-bbee-02f9e1bf7b46`）に対して API スコープへの管理者同意が必要です。
-
-##### 方法 A: knownClientApplications に Azure CLI を追加（推奨）
-
-1. `vuln-notify-api-app` > マニフェスト を開く
-2. `knownClientApplications` を以下に変更:
-   ```json
-   "knownClientApplications": ["04b07795-8ddb-461a-bbee-02f9e1bf7b46"]
-   ```
-3. 保存
-4. `vuln-notify-api-app` > API のアクセス許可 > `管理者の同意を与えます` を再実行
-
-これにより Azure CLI 経由でのトークン取得時に、API 側の同意が自動的に適用されます。
-
-##### 方法 B: 管理者同意 URL を使う
-
-管理者に以下の URL をブラウザで開いてもらい、同意を付与してもらいます。
-
-```text
-https://login.microsoftonline.com/<TENANT_ID>/adminconsent?client_id=04b07795-8ddb-461a-bbee-02f9e1bf7b46&scope=api://<API_APP_ID>/access_as_user
-```
-
-> [!NOTE]
-> 管理者同意の付与には以下のいずれかの Entra ID ロールが必要です。
->
-> | ロール | 備考 |
-> |---|---|
-> | `Cloud Application Administrator` | 推奨（最小権限）|
-> | `Application Administrator` | |
-> | `Global Administrator` | 最も広い権限 |
->
-> 同意が未付与の場合、`az login --scope` 実行時に「管理者の承認が必要」画面が表示されます。
-
-#### Step 8. 最終確認（OBO 前提）
+#### Step 7. 最終確認（OBO 前提）
 
 以下が揃っていれば OBO 前提の Entra 構成は完了です。
 
@@ -432,7 +397,6 @@ https://login.microsoftonline.com/<TENANT_ID>/adminconsent?client_id=04b07795-8d
 - クライアント側で `access_as_user` が付与済み
 - Graph Delegated permissions が Granted 済み
 - API 側 Client secret が払い出し済み
-- Azure CLI 用の管理者同意が付与済み（テスト時に必要）
 
 ### 5. Key Vault シークレットを投入
 
@@ -565,7 +529,94 @@ az functionapp show --name $funcApp --resource-group vuln-notify-rg --query "sta
 - `Running` を確認
 - その後、本 README の「テスト手順」を実行して `status: sent` を確認
 
-### 7. Planner ID / Bucket ID を取得
+### 7. Function App のコードデプロイ
+
+Function App のコード（`function_app.py` 等）を Azure にアップロードします。Function App 名はデプロイごとにサフィックスが異なるため、`$funcApp` 変数を使用します。
+
+```powershell
+$deploymentName = "vuln-notify-infra"
+$funcUrl = az deployment group show -g vuln-notify-rg -n $deploymentName --query "properties.outputs.functionAppUrl.value" -o tsv
+$funcApp = $funcUrl -replace '^https://','' -replace '\.azurewebsites\.net$',''
+$storageAccount = az deployment group show -g vuln-notify-rg -n $deploymentName --query "properties.outputs.storageAccountName.value" -o tsv
+"Function App: $funcApp"
+"Storage Account: $storageAccount"
+```
+
+> [!NOTE]
+> `$storageAccount` が空の場合は、Bicep テンプレートを再デプロイしてください（`storageAccountName` 出力が追加されています）。または以下で取得できます。
+>
+> ```powershell
+> $storageAccount = az functionapp config appsettings list --name $funcApp --resource-group vuln-notify-rg --query "[?name=='AzureWebJobsStorage__accountName'].value" -o tsv
+> ```
+
+#### Step 1. デプロイ用 Blob コンテナーにアクセスするためのロールを付与
+
+初回のみ、自分自身に Storage Blob Data Contributor ロールを付与します（Blob アップロードに必要）。
+
+```powershell
+$currentUser = az ad signed-in-user show --query id -o tsv
+$storageId = az storage account show --name $storageAccount --resource-group vuln-notify-rg --query id -o tsv
+
+az role assignment create `
+  --role "Storage Blob Data Contributor" `
+  --assignee-object-id $currentUser `
+  --assignee-principal-type User `
+  --scope $storageId
+```
+
+1行版:
+
+```powershell
+az role assignment create --role "Storage Blob Data Contributor" --assignee-object-id $currentUser --assignee-principal-type User --scope $storageId
+```
+
+> [!NOTE]
+> ロール反映まで数分かかる場合があります。`AuthorizationPermissionMismatch` エラーが出た場合は少し待ってから再実行してください。
+
+#### Step 2. パッケージを作成してデプロイ
+
+```powershell
+# パッケージを作成
+Push-Location function-app
+python -m pip install -r requirements.txt --target .python_packages/lib/site-packages --upgrade --quiet
+Compress-Archive -Path * -DestinationPath ..\deploy.zip -Force
+Pop-Location
+
+# Blob コンテナーを作成（初回のみ）
+az storage container create --name function-releases --account-name $storageAccount --auth-mode login
+
+# zip をアップロード
+az storage blob upload `
+  --account-name $storageAccount `
+  --container-name function-releases `
+  --name deploy.zip `
+  --file deploy.zip `
+  --auth-mode login `
+  --overwrite
+
+# WEBSITE_RUN_FROM_PACKAGE を Blob URL に設定
+$blobUrl = "https://$storageAccount.blob.core.windows.net/function-releases/deploy.zip"
+az functionapp config appsettings set `
+  --name $funcApp `
+  --resource-group vuln-notify-rg `
+  --settings "WEBSITE_RUN_FROM_PACKAGE=$blobUrl"
+
+# 再起動して反映
+az functionapp restart --name $funcApp --resource-group vuln-notify-rg
+
+Remove-Item deploy.zip
+```
+
+> [!NOTE]
+> このテンプレートでは `AzureWebJobsStorage` を **Managed Identity（ID ベース接続）** で構成しています（`AzureWebJobsStorage__accountName` のみ設定、アクセスキー不使用）。この構成では `func azure functionapp publish` / `az functionapp deployment source config-zip` / `az webapp deploy` がいずれも動作しないため、**Blob Storage にパッケージをアップロードし `WEBSITE_RUN_FROM_PACKAGE` で参照する方式**を使用しています。Function App の Managed Identity には Bicep テンプレートで Storage Blob Data Owner ロールが自動付与されているため、Blob から直接パッケージを読み込めます。
+
+> [!TIP]
+> `pip` コマンドが「Access is denied」で失敗する場合は `python -m pip` を使用してください。Python の Scripts フォルダに実行権限がない環境でも `python -m pip` は動作します。
+
+> [!NOTE]
+> 現在のテンプレートは Linux Consumption プラン（Y1 SKU）を使用しています。Linux Consumption は **2028年9月30日に EOL** となるため、本番運用では [Flex Consumption プラン](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan) への移行を検討してください。
+
+### 8. Planner ID / Bucket ID を取得
 
 Planner タスク連携を使う場合は `plan_id` と `bucket_id` が必要です。
 
@@ -653,93 +704,6 @@ $buckets.value | Select-Object id,name,orderHint | Format-Table -AutoSize
 - `-PlannerBucketId` に `bucket_id` を指定
 - JSON で送る場合は `planner.plan_id` と `planner.bucket_id` に指定
 
-### 8. Function App のコードデプロイ
-
-Function App のコード（`function_app.py` 等）を Azure にアップロードします。Function App 名はデプロイごとにサフィックスが異なるため、`$funcApp` 変数を使用します。
-
-```powershell
-$deploymentName = "vuln-notify-infra"
-$funcUrl = az deployment group show -g vuln-notify-rg -n $deploymentName --query "properties.outputs.functionAppUrl.value" -o tsv
-$funcApp = $funcUrl -replace '^https://','' -replace '\.azurewebsites\.net$',''
-$storageAccount = az deployment group show -g vuln-notify-rg -n $deploymentName --query "properties.outputs.storageAccountName.value" -o tsv
-"Function App: $funcApp"
-"Storage Account: $storageAccount"
-```
-
-> [!NOTE]
-> `$storageAccount` が空の場合は、Bicep テンプレートを再デプロイしてください（`storageAccountName` 出力が追加されています）。または以下で取得できます。
->
-> ```powershell
-> $storageAccount = az functionapp config appsettings list --name $funcApp --resource-group vuln-notify-rg --query "[?name=='AzureWebJobsStorage__accountName'].value" -o tsv
-> ```
-
-#### Step 1. デプロイ用 Blob コンテナーにアクセスするためのロールを付与
-
-初回のみ、自分自身に Storage Blob Data Contributor ロールを付与します（Blob アップロードに必要）。
-
-```powershell
-$currentUser = az ad signed-in-user show --query id -o tsv
-$storageId = az storage account show --name $storageAccount --resource-group vuln-notify-rg --query id -o tsv
-
-az role assignment create `
-  --role "Storage Blob Data Contributor" `
-  --assignee-object-id $currentUser `
-  --assignee-principal-type User `
-  --scope $storageId
-```
-
-1行版:
-
-```powershell
-az role assignment create --role "Storage Blob Data Contributor" --assignee-object-id $currentUser --assignee-principal-type User --scope $storageId
-```
-
-> [!NOTE]
-> ロール反映まで数分かかる場合があります。`AuthorizationPermissionMismatch` エラーが出た場合は少し待ってから再実行してください。
-
-#### Step 2. パッケージを作成してデプロイ
-
-```powershell
-# パッケージを作成
-Push-Location function-app
-python -m pip install -r requirements.txt --target .python_packages/lib/site-packages --upgrade --quiet
-Compress-Archive -Path * -DestinationPath ..\deploy.zip -Force
-Pop-Location
-
-# Blob コンテナーを作成（初回のみ）
-az storage container create --name function-releases --account-name $storageAccount --auth-mode login
-
-# zip をアップロード
-az storage blob upload `
-  --account-name $storageAccount `
-  --container-name function-releases `
-  --name deploy.zip `
-  --file deploy.zip `
-  --auth-mode login `
-  --overwrite
-
-# WEBSITE_RUN_FROM_PACKAGE を Blob URL に設定
-$blobUrl = "https://$storageAccount.blob.core.windows.net/function-releases/deploy.zip"
-az functionapp config appsettings set `
-  --name $funcApp `
-  --resource-group vuln-notify-rg `
-  --settings "WEBSITE_RUN_FROM_PACKAGE=$blobUrl"
-
-# 再起動して反映
-az functionapp restart --name $funcApp --resource-group vuln-notify-rg
-
-Remove-Item deploy.zip
-```
-
-> [!NOTE]
-> このテンプレートでは `AzureWebJobsStorage` を **Managed Identity（ID ベース接続）** で構成しています（`AzureWebJobsStorage__accountName` のみ設定、アクセスキー不使用）。この構成では `func azure functionapp publish` / `az functionapp deployment source config-zip` / `az webapp deploy` がいずれも動作しないため、**Blob Storage にパッケージをアップロードし `WEBSITE_RUN_FROM_PACKAGE` で参照する方式**を使用しています。Function App の Managed Identity には Bicep テンプレートで Storage Blob Data Owner ロールが自動付与されているため、Blob から直接パッケージを読み込めます。
-
-> [!TIP]
-> `pip` コマンドが「Access is denied」で失敗する場合は `python -m pip` を使用してください。Python の Scripts フォルダに実行権限がない環境でも `python -m pip` は動作します。
-
-> [!NOTE]
-> 現在のテンプレートは Linux Consumption プラン（Y1 SKU）を使用しています。Linux Consumption は **2028年9月30日に EOL** となるため、本番運用では [Flex Consumption プラン](https://learn.microsoft.com/azure/azure-functions/flex-consumption-plan) への移行を検討してください。
-
 ## API 仕様（現在）
 
 ### エンドポイント
@@ -796,11 +760,40 @@ Content-Type: application/json
 
 ### 9. テスト手順
 
-#### 前提: Azure CLI 用の管理者同意
+#### 前提: Azure CLI 用の管理者同意を構成
 
-Azure CLI でカスタム API スコープのトークンを取得するには、事前に管理者同意が必要です（Step 4 の Step 7 で構成済み）。
+Azure CLI（`az login --scope`）でテスト用トークンを取得するには、Azure CLI アプリ（AppId: `04b07795-8ddb-461a-bbee-02f9e1bf7b46`）に対して API スコープへの管理者同意が必要です。
 
-未構成の場合、`az login --scope` 実行時に「管理者の承認が必要」画面が表示されます。Step 4 の Step 7 を実施してください。
+##### 方法 A: knownClientApplications に Azure CLI を追加（推奨）
+
+1. `vuln-notify-api-app` > マニフェスト を開く
+2. `knownClientApplications` を以下に変更:
+   ```json
+   "knownClientApplications": ["04b07795-8ddb-461a-bbee-02f9e1bf7b46"]
+   ```
+3. 保存
+4. `vuln-notify-api-app` > API のアクセス許可 > `管理者の同意を与えます` を再実行
+
+これにより Azure CLI 経由でのトークン取得時に、API 側の同意が自動的に適用されます。
+
+##### 方法 B: 管理者同意 URL を使う
+
+管理者に以下の URL をブラウザで開いてもらい、同意を付与してもらいます。
+
+```text
+https://login.microsoftonline.com/<TENANT_ID>/adminconsent?client_id=04b07795-8ddb-461a-bbee-02f9e1bf7b46&scope=api://<API_APP_ID>/access_as_user
+```
+
+> [!NOTE]
+> 管理者同意の付与には以下のいずれかの Entra ID ロールが必要です。
+>
+> | ロール | 備考 |
+> |---|---|
+> | `Cloud Application Administrator` | 推奨（最小権限）|
+> | `Application Administrator` | |
+> | `Global Administrator` | 最も広い権限 |
+>
+> 同意が未付与の場合、`az login --scope` 実行時に「管理者の承認が必要」画面が表示されます。
 
 #### トークン取得
 
